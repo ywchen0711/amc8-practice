@@ -6,6 +6,19 @@
 (function () {
   'use strict';
   var BANK = window.PROBLEMS || [];
+  // The pool: fixed problems plus generators (a generator makes a fresh problem with new numbers every time it is drawn).
+  // A generator stands in for the fixed problems it replaces; those stay in BANK so old saved mistakes still open.
+  var GEN = window.GENERATORS || { list: [], fromId: function () { return null; } };
+  var REPLACED = {};
+  GEN.list.forEach(function (g) { (g.replaces || []).forEach(function (id) { REPLACED[id] = true; }); });
+  var POOL = BANK.filter(function (p) { return !REPLACED[p.id]; }).map(function (p) { return { topic: p.topic, level: p.level, p: p }; })
+    .concat(GEN.list.map(function (g) { return { topic: g.topic, level: g.level, g: g }; }));
+  function draw(item) { return item.g ? GEN.build(item.g, 1 + Math.floor(Math.random() * 2147483000)) : item.p; }
+  function byId(id) {
+    if (String(id).indexOf('#') >= 0) return GEN.fromId(id);
+    for (var i = 0; i < BANK.length; i++) if (BANK[i].id === id) return BANK[i];
+    return null;
+  }
   var LETTERS = ['A', 'B', 'C', 'D', 'E'];
   var TOPICS = ['arithmetic', 'percent', 'algebra', 'number', 'counting', 'probability', 'geometry', 'logic'];
   // past contests: the 20 most recent AMC 8s (there was none in 2021 — the contest moved from November to January)
@@ -16,9 +29,10 @@
     en: {
       brand: 'AMC 8 Practice', lang: '中文',
       title: 'Get ready for the AMC 8',
-      lead: 'Answer one problem at a time against the clock. At the end you see the right answer to every problem, the key idea, and a step-by-step explanation.',
+      lead: 'Answer one problem at a time against the clock. At the end you see the right answer to every problem, the key idea, and a step-by-step explanation. Problems are generated with new numbers every time, so you never run out.',
       mock: 'Full mock test', mockDesc: '25 problems, 40 minutes, easy to hard — just like the real contest.',
-      quick: 'Quick practice', quickDesc: '10 random problems with a stopwatch.',
+      quick: 'Quick 10', quickDesc: '10 random problems with a stopwatch — new numbers every time.',
+      quick1: 'Quick 1', quick1Desc: 'One random problem. See the answer right away, then keep going.', another: 'Another problem →', skipNew: 'Skip →',
       topic: 'Practice a topic', topicDesc: 'Pick a topic below, then start 10 problems from it.',
       mistakes: 'Review mistakes', mistakesDesc: 'Try again the problems you missed ({n}).', noMistakes: 'Nothing to review yet — great!',
       instant: 'In practice modes, show the answer right after each problem',
@@ -41,9 +55,10 @@
     zh: {
       brand: 'AMC 8 練習', lang: 'English',
       title: '準備 AMC 8 數學競賽',
-      lead: '一次一題，邊作答邊計時。做完後會告訴你每一題的正確答案、解題關鍵，以及一步一步的解說。',
+      lead: '一次一題，邊作答邊計時。做完後會告訴你每一題的正確答案、解題關鍵，以及一步一步的解說。題目每次都隨機產生新的數字，永遠做不完。',
       mock: '完整模擬考', mockDesc: '25 題、40 分鐘，由易到難——和正式比賽一樣。',
-      quick: '快速練習', quickDesc: '隨機 10 題，碼錶計時。',
+      quick: '快速 10 題', quickDesc: '隨機 10 題，碼錶計時——每次數字都不一樣。',
+      quick1: '快速 1 題', quick1Desc: '隨機 1 題，作答後馬上看答案，再接著下一題。', another: '再來一題 →', skipNew: '換一題 →',
       topic: '單元練習', topicDesc: '在下面選一個單元，再開始該單元的 10 題。',
       mistakes: '複習錯題', mistakesDesc: '重新挑戰答錯的題目（{n} 題）。', noMistakes: '目前沒有錯題——很棒！',
       instant: '練習模式中，每題作答後立刻顯示答案',
@@ -98,13 +113,14 @@
       '<h1>' + t('title') + '</h1><p class="lead">' + t('lead') + '</p>' +
       '<div class="modes">' +
         '<button class="mode" data-start="mock"><div class="ic">🏆</div><b>' + t('mock') + '</b><span>' + t('mockDesc') + '</span></button>' +
+        '<button class="mode" data-start="quick1"><div class="ic">🎲</div><b>' + t('quick1') + '</b><span>' + t('quick1Desc') + '</span></button>' +
         '<button class="mode" data-start="quick"><div class="ic">⚡</div><b>' + t('quick') + '</b><span>' + t('quickDesc') + '</span></button>' +
         '<button class="mode" data-start="topic"><div class="ic">🎯</div><b>' + t('startTopic', { topic: t('topics.' + settings.topic) }) + '</b><span>' + t('topicDesc') + '</span></button>' +
         '<button class="mode" data-start="mistakes"' + (missed.length ? '' : ' disabled') + '><div class="ic">🔁</div><b>' + t('mistakes') + '</b><span>' +
           (missed.length ? t('mistakesDesc', { n: missed.length }) : t('noMistakes')) + '</span></button>' +
       '</div>' +
-      '<div class="chips">' + TOPICS.filter(function (k) { return BANK.some(function (p) { return p.topic === k; }); }).map(function (k) {
-        return '<button class="chip' + (settings.topic === k ? ' on' : '') + '" data-topic="' + k + '">' + t('topics.' + k) + ' · ' + BANK.filter(function (p) { return p.topic === k; }).length + '</button>';
+      '<div class="chips">' + TOPICS.filter(function (k) { return POOL.some(function (p) { return p.topic === k; }); }).map(function (k) {
+        return '<button class="chip' + (settings.topic === k ? ' on' : '') + '" data-topic="' + k + '">' + t('topics.' + k) + ' · ' + POOL.filter(function (p) { return p.topic === k; }).length + '</button>';
       }).join('') + '</div>' +
       '<label class="opt"><input type="checkbox" id="instant"' + (settings.instant ? ' checked' : '') + '> ' + t('instant') + '</label>' +
       (hist.length ? '<h2>' + t('yourStats') + '</h2><div class="stats">' +
@@ -121,25 +137,26 @@
   // ======================= a test =======================
   var T = null, timer = null;
   function pickMock() {
-    var used = {};
+    var used = [];
     return MOCK.levels.map(function (lv) {
-      var pool = shuffle(BANK.filter(function (p) { return p.level === lv && !used[p.id]; }));
-      if (!pool.length) pool = shuffle(BANK.filter(function (p) { return !used[p.id]; }));
-      used[pool[0].id] = true;
-      return pool[0];
+      var pool = shuffle(POOL.filter(function (p) { return p.level === lv && used.indexOf(p) < 0; }));
+      if (!pool.length) pool = shuffle(POOL.filter(function (p) { return used.indexOf(p) < 0; }));
+      used.push(pool[0]);
+      return draw(pool[0]);
     });
   }
   function start(mode, list) {
     if (!list) {
       if (mode === 'mock') list = pickMock();
-      else if (mode === 'quick') list = shuffle(BANK).slice(0, 10).sort(function (a, b) { return a.level - b.level; });
-      else if (mode === 'topic') list = shuffle(BANK.filter(function (p) { return p.topic === settings.topic; })).slice(0, 10).sort(function (a, b) { return a.level - b.level; });
-      else if (mode === 'mistakes') list = shuffle(BANK.filter(function (p) { return missed.indexOf(p.id) >= 0; })).slice(0, 15);
+      else if (mode === 'quick') list = shuffle(POOL).slice(0, 10).map(draw).sort(function (a, b) { return a.level - b.level; });
+      else if (mode === 'quick1') list = [draw(shuffle(POOL)[0])];
+      else if (mode === 'topic') list = shuffle(POOL.filter(function (p) { return p.topic === settings.topic; })).slice(0, 10).map(draw).sort(function (a, b) { return a.level - b.level; });
+      else if (mode === 'mistakes') list = shuffle(missed.map(byId).filter(Boolean)).slice(0, 15);
     }
     if (!list || !list.length) return;
     T = { mode: mode, list: list, i: 0, answers: list.map(function () { return null; }), flags: list.map(function () { return false; }),
           spent: list.map(function () { return 0; }), checked: list.map(function () { return false; }),
-          limit: mode === 'mock' ? MOCK.minutes * 60 : 0, elapsed: 0, last: Date.now(), instant: mode !== 'mock' && settings.instant };
+          limit: mode === 'mock' ? MOCK.minutes * 60 : 0, elapsed: 0, last: Date.now(), instant: mode === 'quick1' || (mode !== 'mock' && settings.instant) };
     location.hash = 'test';
     startTimer();
     renderQ();
@@ -181,13 +198,15 @@
           '<button class="btn" data-nav="-1"' + (T.i ? '' : ' disabled') + '>' + t('prev') + '</button>' +
           (T.mode === 'mock' ? '<button class="btn flag' + (T.flags[T.i] ? ' on' : '') + '" data-flag>⚑ ' + t('flag') + '</button>' : '') +
           '<span class="spacer"></span>' +
-          (T.instant && !checked && a != null ? '<button class="btn primary" data-check>' + t('check') + '</button>' :
+          (T.mode === 'quick1' ? (checked ? '<button class="btn primary" data-another>' + t('another') + '</button>' :
+            a != null ? '<button class="btn primary" data-check>' + t('check') + '</button>' : '<button class="btn" data-skipnew>' + t('skipNew') + '</button>') :
+          T.instant && !checked && a != null ? '<button class="btn primary" data-check>' + t('check') + '</button>' :
             T.i < n - 1 ? '<button class="btn primary" data-nav="1">' + (a == null && !checked ? t('skip') : t('next')) + '</button>' : '') +
           '<button class="btn' + (T.i === n - 1 ? ' primary' : '') + '" data-finish>' + t('finish') + '</button>' +
         '</div></div>' +
-      '<div class="dots">' + T.list.map(function (q, k) {
+      (n > 1 ? '<div class="dots">' + T.list.map(function (q, k) {
         return '<button class="dot' + (T.answers[k] != null ? ' done' : '') + (k === T.i ? ' cur' : '') + (T.flags[k] ? ' flagged' : '') + '" data-jump="' + k + '">' + (k + 1) + '</button>';
-      }).join('') + '</div><p class="kbd">' + t('keys') + '</p>';
+      }).join('') + '</div>' : '') + '<p class="kbd">' + t('keys') + '</p>';
   }
   function feedback(p, a) {
     var ok = a === LETTERS.indexOf(p.answer);
@@ -213,6 +232,11 @@
     var blanks = T.answers.filter(function (x) { return x == null; }).length;
     if (ask && blanks && !confirm(t('confirmFinish', { n: blanks }))) return;
     stopTimer();
+    tally();
+    location.hash = 'results';
+    results(false);
+  }
+  function tally() {                          // score the test, remember mistakes, add it to the history
     var score = 0;
     T.list.forEach(function (p, k) {
       var ok = T.answers[k] === LETTERS.indexOf(p.answer);
@@ -224,8 +248,6 @@
     hist.push({ mode: T.mode, score: score, total: T.list.length, secs: Math.round(T.elapsed), date: new Date().toISOString().slice(0, 10) });
     save('history', hist.slice(-200)); save('missed', missed);
     T.score = score;
-    location.hash = 'results';
-    results(false);
   }
 
   // ======================= results =======================
@@ -266,7 +288,7 @@
 
   // ======================= events =======================
   document.addEventListener('click', function (e) {
-    var el = e.target.closest('[data-start],[data-topic],[data-pick],[data-nav],[data-jump],[data-flag],[data-check],[data-finish],[data-go],[data-retry]');
+    var el = e.target.closest('[data-start],[data-topic],[data-pick],[data-nav],[data-jump],[data-flag],[data-check],[data-finish],[data-go],[data-retry],[data-another],[data-skipnew]');
     if (!el) return;
     if (el.hasAttribute('data-start')) start(el.getAttribute('data-start'));
     else if (el.hasAttribute('data-topic')) { settings.topic = el.getAttribute('data-topic'); save('settings', settings); home(); }
@@ -276,6 +298,8 @@
     else if (el.hasAttribute('data-flag')) { T.flags[T.i] = !T.flags[T.i]; renderQ(); }
     else if (el.hasAttribute('data-check')) { T.checked[T.i] = true; renderQ(); }
     else if (el.hasAttribute('data-finish')) finish(true);
+    else if (el.hasAttribute('data-another')) { stopTimer(); tally(); start('quick1'); }
+    else if (el.hasAttribute('data-skipnew')) start('quick1');
     else if (el.hasAttribute('data-retry')) {
       var wrong = T.list.filter(function (p, k) { return T.answers[k] !== LETTERS.indexOf(p.answer); });
       start('mistakes', wrong);
@@ -293,7 +317,8 @@
     else if (e.key === 'ArrowRight') go(1);
     else if (e.key === 'ArrowLeft') go(-1);
     else if (e.key === 'Enter') {
-      if (T.instant && !T.checked[T.i] && T.answers[T.i] != null) { T.checked[T.i] = true; renderQ(); }
+      if (T.mode === 'quick1' && T.checked[0]) { stopTimer(); tally(); start('quick1'); }
+      else if (T.instant && !T.checked[T.i] && T.answers[T.i] != null) { T.checked[T.i] = true; renderQ(); }
       else if (T.i < T.list.length - 1) go(1); else finish(true);
     }
   });

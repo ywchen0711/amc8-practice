@@ -89,6 +89,7 @@ const val = (s) => {
   if (/^\d+ \d+\/\d+$/.test(s)) { const [w, f] = s.split(' '), [n, d] = f.split('/'); return +w + n / d; }
   if (/^-?\d+\/\d+$/.test(s)) { const [n, d] = s.split('/'); return n / d; }
   const t = s.replace(/[−]/g, '-').replace(/[%π]/g, '');
+  if (/π/.test(s) && t === '') return 1;
   return /^-?\d+(\.\d+)?$/.test(t) ? Number(t) : null;
 };
 let bad = 0;
@@ -114,6 +115,43 @@ for (const p of P) {
 }
 const byLetter = {}; P.forEach((p) => { byLetter[p.answer] = (byLetter[p.answer] || 0) + 1; });
 const byLevel = {}; P.forEach((p) => { byLevel[p.level] = (byLevel[p.level] || 0) + 1; });
-console.log(`${P.length} problems · answers ${JSON.stringify(byLetter)} · levels ${JSON.stringify(byLevel)}`);
+console.log(`${P.length} fixed problems · answers ${JSON.stringify(byLetter)} · levels ${JSON.stringify(byLevel)}`);
+
+// ---------- generators: build many random instances of each and check every one ----------
+vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', 'gen.js'), 'utf8'));
+const GEN = window.GENERATORS, N = +(process.argv[2] || 400);
+const genLetters = {}, genLevels = {}, replaced = new Set();
+for (const g of GEN.list) {
+  genLevels[g.level] = (genLevels[g.level] || 0) + 1;
+  (g.replaces || []).forEach((id) => { if (!ids.has(id)) { bad++; console.log(g.id + ': replaces unknown problem ' + id); } replaced.add(id); });
+  let fails = 0;
+  for (let seed = 1; seed <= N && fails < 3; seed++) {
+    const err = (m) => { bad++; fails++; console.log(`${g.id}#${seed}: ${m}`); };
+    let p;
+    try { p = GEN.build(g, seed); } catch (e) { err('throws ' + e.message); continue; }
+    ['q', 'insight', 'steps'].forEach((k) => { if (!p[k] || !p[k].en || !p[k].zh) err('missing ' + k); });
+    if (p.steps && p.steps.en.length !== p.steps.zh.length) err('steps differ in length');
+    if (/undefined|NaN|Infinity/.test(JSON.stringify([p.q, p.steps, p.choices]))) err('text contains undefined / NaN: ' + JSON.stringify(p.q.en));
+    const en = Array.isArray(p.choices) ? p.choices : p.choices.en;
+    if (en.length !== 5 || new Set(en).size !== 5) err('needs 5 different choices: ' + JSON.stringify(en));
+    const k = LETTERS.indexOf(p.answer);
+    if (k < 0) { err('bad answer letter'); continue; }
+    if (en[k] !== p._text) err(`marked ${p.answer} = "${en[k]}" but the answer is "${p._text}"`);
+    genLetters[p.answer] = (genLetters[p.answer] || 0) + 1;
+    let want;
+    try { want = g.check(p._p); } catch (e) { err('check throws ' + e.message); continue; }
+    const same = p._kind === 'frac' ? want && want.n === p._ans.n && want.d === p._ans.d : Math.abs(want - p._ans) < 1e-6;
+    if (!same) err(`check says ${p._kind === 'frac' ? want && want.n + '/' + want.d : want}, generator says ${p._kind === 'frac' ? p._ans.n + '/' + p._ans.d : p._ans} (${JSON.stringify(p._p)})`);
+    if (p._kind !== 'words') {
+      const nums = en.map(val);
+      if (nums.some((v) => v == null)) err('unreadable choice ' + JSON.stringify(en));
+      else if (nums.some((v, i) => i && v <= nums[i - 1])) err('choices not increasing ' + JSON.stringify(en));
+      const target = p._kind === 'frac' ? p._ans.n / p._ans.d : p._ans;
+      if (nums.filter((v) => v != null && Math.abs(v - target) < 1e-6).length !== 1) err('the answer value appears ' + nums.filter((v) => Math.abs(v - target) < 1e-6).length + ' times ' + JSON.stringify(en));
+    }
+    if (JSON.stringify(GEN.build(g, seed).choices) !== JSON.stringify(p.choices)) err('not reproducible from its seed');
+  }
+}
+console.log(`${GEN.list.length} generators × ${N} instances · answers ${JSON.stringify(genLetters)} · levels ${JSON.stringify(genLevels)} · ${replaced.size} fixed problems replaced`);
 console.log(bad ? bad + ' PROBLEM(S)' : 'all answers verified');
 process.exit(bad ? 1 : 0);
