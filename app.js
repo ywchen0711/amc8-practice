@@ -84,6 +84,8 @@
   function load(k, d) { try { var v = localStorage.getItem('amc8.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
   function save(k, v) { try { localStorage.setItem('amc8.' + k, JSON.stringify(v)); } catch (e) { /* private mode */ } }
   var lang = load('lang', 'en');
+  var fromLobby = (typeof location !== 'undefined' && (location.search.match(/[?&]lang=(zh|en)(?![a-z])/) || [])[1]);   // the lobby opens games with ?lang=zh|en
+  if (fromLobby) { lang = fromLobby; save('lang', lang); }
   var settings = load('settings', { instant: false, topic: 'geometry' });
   var hist = load('history', []);           // [{ mode, score, total, secs, date }]
   var missed = load('missed', []);             // problem ids answered wrong (removed when answered right later)
